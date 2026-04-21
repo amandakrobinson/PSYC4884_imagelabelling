@@ -497,20 +497,14 @@ fetch(IMAGES_JSON)
           const ok = input.value.trim().length > 0;
           btn.disabled = !ok;
           btn.style.opacity = ok ? '1' : '0.3';
+          if (ok) participantId = input.value.trim();
         });
-        // allow Enter key
         input.addEventListener('keydown', e => {
           if (e.key === 'Enter' && input.value.trim().length > 0) btn.click();
         });
       },
       on_finish: function() {
-        participantId = document.getElementById('pid-input')
-          ? document.getElementById('pid-input').value.trim()
-          : participantId;
-        // store on all future data writes
         jsPsych.data.addProperties({ participant_id: participantId });
-        // update storage key to be participant-specific
-        Object.defineProperty(window, 'STORAGE_KEY', { value: `image_recognition_${participantId}`, writable: false, configurable: true });
       }
     };
 
@@ -547,7 +541,7 @@ fetch(IMAGES_JSON)
         type: jsPsychHtmlButtonResponse,
         stimulus: buildTrialHTML(filename, saved.length + idx, total),
         choices: [],
-        on_load: function() { attachTrialHandlers(filename, saved.length + idx); },
+        on_load: function() { attachTrialHandlers(filename, idx, saved.length); },
         data: { trial_type_custom: 'image_trial', image: filename }
       }));
 
@@ -634,7 +628,7 @@ function buildTrialHTML(filename, idx, total) {
 // ─────────────────────────────────────────────
 // ATTACH HANDLERS (runs after each trial loads)
 // ─────────────────────────────────────────────
-function attachTrialHandlers(filename, idx) {
+function attachTrialHandlers(filename, idx, completedCount) {
   // show the persistent download button once trials begin
   document.getElementById('global-dl-btn').style.display = 'block';
 
@@ -689,7 +683,7 @@ function attachTrialHandlers(filename, idx) {
       face: state.face,
     });
     saveToStorage();
-    maybePeriodicallyDownload(saved.length + idx + 1);
+    maybePeriodicallyDownload(completedCount + idx + 1);
     jsPsych.finishTrial();
   });
 }

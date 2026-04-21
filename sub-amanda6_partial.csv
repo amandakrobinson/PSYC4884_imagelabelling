@@ -1,0 +1,13 @@
+participant_id,image,label,confidence,face,rt_ms
+"amanda6","Picture 4.jpg","bag",7,"yes",8050
+"amanda6","owl natural.jpg","owl",7,"yes",9892
+"amanda6","4747_z_control_2.jpg","zebra",7,"yes",7706
+"amanda6","2Scorpion.png","scorpion",5,"no",11927
+"amanda6","5Scorpion.png","insect",3,"no",16829
+"amanda6","Image 2.jpg","insect",3,"no",17386
+"amanda6","bear_5.jpg","toy bear",7,"yes",11741
+"amanda6","bear_6.jpg","toy bear",7,"yes",17739
+"amanda6","bear_3.jpg","toy bear",7,"yes",9804
+"amanda6","JH- lemon b&w.jpg","lemon",6,"no",10020
+"amanda6","2jsn.png","cat",7,"yes",8683
+"amanda6","Beagle1_control.jpg","dog",7,"yes",6973

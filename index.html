@@ -372,7 +372,7 @@
   <div id="screen-end" class="screen info-screen">
     <h1>All done.</h1>
     <h2>Thank you</h2>
-    <p>Your data is being downloaded now. Please send the CSV file to the researcher as instructed.</p>
+    <p>Your data has been saved to the researcher's OSF project and is also downloading to your computer now. You can close this window.</p>
     <button id="download-again-btn" class="btn-primary">Download again</button>
   </div>
 
@@ -388,6 +388,10 @@ const IMAGE_FOLDER    = 'images/';
 const IMAGES_JSON     = 'images.json';
 const AUTO_SAVE_EVERY = 50;
 const STORAGE_KEY     = 'image_recognition_data';
+
+const OSF_TOKEN       = 'DjgMSyaqKF4cjLxSYeXC9tVmDiWyYUbJPKW1HkmjGcRgNDrR8eiAPx8SzPTXZhfLmmpaDe';   // ← paste your OSF token
+const OSF_PROJECT     = 'h2snj';
+const OSF_FOLDER      = 'data';                    // subfolder within OSF Storage (created automatically)
 
 // ─────────────────────────────────────────────
 // STATE
@@ -417,18 +421,45 @@ function clearStorage() {
 }
 
 // ─────────────────────────────────────────────
-// CSV DOWNLOAD
+// CSV HELPERS
 // ─────────────────────────────────────────────
+const CSV_COLS = ['participant_id', 'image', 'label', 'confidence', 'face', 'rt_ms'];
+
+function resultsToCSV() {
+  const header = CSV_COLS.join(',');
+  const lines = results.map(r => CSV_COLS.map(c => JSON.stringify(r[c] ?? '')).join(','));
+  return [header, ...lines].join('\n');
+}
+
 function downloadCSV(suffix) {
-  const cols = ['participant_id', 'image', 'label', 'confidence', 'face', 'rt_ms'];
-  const header = cols.join(',');
-  const lines = results.map(r => cols.map(c => JSON.stringify(r[c] ?? '')).join(','));
-  const csv = [header, ...lines].join('\n');
+  const csv  = resultsToCSV();
   const blob = new Blob([csv], { type: 'text/csv' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
   a.download = `sub-${participantId}_${suffix}.csv`;
   a.click();
+}
+
+// ─────────────────────────────────────────────
+// OSF UPLOAD
+// ─────────────────────────────────────────────
+async function uploadToOSF() {
+  if (!OSF_TOKEN || OSF_TOKEN === 'PASTE_YOUR_TOKEN_HERE') return;
+  try {
+    const filename = `sub-${participantId}.csv`;
+    const csv      = resultsToCSV();
+    const url      = `https://files.osf.io/v1/resources/${OSF_PROJECT}/providers/osfstorage/${OSF_FOLDER}/?name=${encodeURIComponent(filename)}&kind=file`;
+    await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${OSF_TOKEN}`,
+        'Content-Type': 'text/csv',
+      },
+      body: csv
+    });
+  } catch(e) {
+    console.warn('OSF upload failed:', e);
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -508,6 +539,7 @@ function submitTrial() {
   });
 
   saveToStorage();
+  uploadToOSF(); // fire and forget — uploads full CSV so far on every trial
 
   if (AUTO_SAVE_EVERY > 0 && results.length % AUTO_SAVE_EVERY === 0) {
     downloadCSV(`after_${results.length}`);
@@ -524,6 +556,7 @@ function submitTrial() {
 function finishExperiment() {
   showScreen('screen-end');
   document.getElementById('save-btn').style.display = 'none';
+  uploadToOSF();
   downloadCSV('complete');
   clearStorage();
 }

@@ -351,23 +351,91 @@
       border-radius: 2px;
       transition: width 0.3s ease;
     }
+
+    .dl-btn {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      padding: 8px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text-dim);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      cursor: pointer;
+      transition: all 0.15s;
+      z-index: 999;
+    }
+
+    .dl-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
   </style>
 </head>
 <body>
+<button class="dl-btn" id="global-dl-btn" style="display:none" onclick="downloadCSV('partial')">↓ Save progress</button>
 <script>
 // ─────────────────────────────────────────────
 // CONFIG — edit these
 // ─────────────────────────────────────────────
-const IMAGE_FOLDER = 'images/';   // path relative to index.html
-const IMAGES_JSON  = 'images.json'; // JSON file listing image filenames
+const IMAGE_FOLDER   = 'images/';     // path relative to index.html
+const IMAGES_JSON    = 'images.json'; // JSON file listing image filenames
+const AUTO_SAVE_EVERY = 50;           // download CSV every N images (0 to disable)
+
+// ─────────────────────────────────────────────
+// LOCALSTORAGE AUTOSAVE
+// ─────────────────────────────────────────────
+const STORAGE_KEY = 'image_recognition_data';
+
+function saveToStorage() {
+  const rows = jsPsych.data.get().filter({trial_type_custom: 'image_trial'}).values();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
+}
+
+function loadFromStorage() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved ? JSON.parse(saved) : [];
+  } catch(e) {
+    return [];
+  }
+}
+
+function clearStorage() {
+  localStorage.removeItem(STORAGE_KEY);
+}
+
+function downloadCSV(suffix) {
+  const pid = jsPsych.data.get().filter({trial_type_custom: 'image_trial'}).values()[0]?.participant_id || 'unknown';
+  jsPsych.data.get().filter({trial_type_custom: 'image_trial'}).localSave('csv', `sub-${pid}_${suffix}.csv`);
+}
+
+function maybePeriodicallyDownload(trialIndex) {
+  if (AUTO_SAVE_EVERY > 0 && trialIndex > 0 && trialIndex % AUTO_SAVE_EVERY === 0) {
+    downloadCSV(`after_${trialIndex}`);
+  }
+}
+
+function rowsToCSV(rows) {
+  if (!rows.length) return '';
+  const cols = ['image','label','confidence','face','rt'];
+  const header = cols.join(',');
+  const lines = rows.map(r =>
+    cols.map(c => JSON.stringify(r[c] ?? '')).join(',')
+  );
+  return [header, ...lines].join('\n');
+}
 
 // ─────────────────────────────────────────────
 // INIT jsPsych
 // ─────────────────────────────────────────────
 const jsPsych = initJsPsych({
   on_finish: function() {
-    // download CSV on completion
-    jsPsych.data.get().filter({trial_type_custom: 'image_trial'}).localSave('csv', 'image_recognition_data.csv');
+    downloadCSV('complete');
+    clearStorage();
   }
 });
 
@@ -392,13 +460,73 @@ fetch(IMAGES_JSON)
     const images = shuffle(imageList);
     const total  = images.length;
 
+    // check for saved progress
+    const saved = loadFromStorage();
+    const completedImages = new Set(saved.map(r => r.image));
+    const resuming = saved.length > 0;
+    const savedPid = resuming && saved[0].participant_id ? saved[0].participant_id : null;
+
+    // restore saved trials into jsPsych data
+    if (resuming) {
+      saved.forEach(row => jsPsych.data.write(row));
+    }
+
+    // ── Participant ID screen (skip if resuming — we already have it) ──
+    let participantId = savedPid || '';
+
+    const pid_screen = {
+      type: jsPsychHtmlButtonResponse,
+      stimulus: `
+        <div class="info-screen">
+          <h1>Image Recognition Study</h1>
+          <h2>Before you begin</h2>
+          <p>Please enter your participant ID or student number below. This is used to name your data file — it will not be used to identify you personally.</p>
+          <div class="question-row" style="margin-top:8px">
+            <input class="label-input" type="text" id="pid-input" placeholder="e.g. s1234567" autocomplete="off" style="font-size:16px">
+          </div>
+          <div class="validation-msg" id="pid-val" style="margin-top:8px"></div>
+        </div>`,
+      choices: ['Continue'],
+      button_html: '<button class="start-btn" id="pid-continue-btn">%choice%</button>',
+      on_load: function() {
+        const btn = document.querySelector('.start-btn');
+        const input = document.getElementById('pid-input');
+        btn.disabled = true;
+        btn.style.opacity = '0.3';
+        input.addEventListener('input', () => {
+          const ok = input.value.trim().length > 0;
+          btn.disabled = !ok;
+          btn.style.opacity = ok ? '1' : '0.3';
+        });
+        // allow Enter key
+        input.addEventListener('keydown', e => {
+          if (e.key === 'Enter' && input.value.trim().length > 0) btn.click();
+        });
+      },
+      on_finish: function() {
+        participantId = document.getElementById('pid-input')
+          ? document.getElementById('pid-input').value.trim()
+          : participantId;
+        // store on all future data writes
+        jsPsych.data.addProperties({ participant_id: participantId });
+        // update storage key to be participant-specific
+        Object.defineProperty(window, 'STORAGE_KEY', { value: `image_recognition_${participantId}`, writable: false, configurable: true });
+      }
+    };
+
     // ── Instructions ──
+    const resumeBanner = resuming ? `
+      <div style="background:#1a2a00;border:1px solid var(--accent);border-radius:4px;padding:14px 18px;margin-bottom:24px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--accent);">
+        ↩ Saved progress found — resuming from image ${saved.length + 1} of ${total}
+      </div>` : '';
+
     const instructions = {
       type: jsPsychHtmlButtonResponse,
       stimulus: `
         <div class="info-screen">
           <h1>Image Recognition Study</h1>
           <h2>Participant Task</h2>
+          ${resumeBanner}
           <p>You will be shown a series of images, one at a time. For each image, please answer three short questions:</p>
           <ul>
             <li>What object or scene does the image show? Type your best label.</li>
@@ -406,20 +534,22 @@ fetch(IMAGES_JSON)
             <li>Do you see a face anywhere in the image?</li>
           </ul>
           <p>There are <strong>${total} images</strong> in total. Work at your own pace — there is no time limit per image.</p>
-          <p>Your responses will be downloaded as a CSV file when you finish.</p>
+          <p>Your responses are saved automatically as you go — if your browser closes, you can return to this page and resume where you left off.</p>
         </div>`,
-      choices: ['Begin'],
+      choices: [resuming ? 'Resume' : 'Begin'],
       button_html: '<button class="start-btn">%choice%</button>',
     };
 
-    // ── Build one trial per image ──
-    const trials = images.map((filename, idx) => ({
-      type: jsPsychHtmlButtonResponse,
-      stimulus: buildTrialHTML(filename, idx, total),
-      choices: [],  // no built-in buttons — we handle submit ourselves
-      on_load: function() { attachTrialHandlers(filename, idx); },
-      data: { trial_type_custom: 'image_trial', image: filename }
-    }));
+    // ── Build one trial per image, skipping already completed ──
+    const trials = images
+      .filter(filename => !completedImages.has(filename))
+      .map((filename, idx) => ({
+        type: jsPsychHtmlButtonResponse,
+        stimulus: buildTrialHTML(filename, saved.length + idx, total),
+        choices: [],
+        on_load: function() { attachTrialHandlers(filename, saved.length + idx); },
+        data: { trial_type_custom: 'image_trial', image: filename }
+      }));
 
     // ── End screen ──
     const end_screen = {
@@ -435,7 +565,8 @@ fetch(IMAGES_JSON)
       button_html: '<button class="start-btn">%choice%</button>',
     };
 
-    jsPsych.run([instructions, ...trials, end_screen]);
+    const firstScreens = resuming ? [instructions] : [pid_screen, instructions];
+    jsPsych.run([...firstScreens, ...trials, end_screen]);
   })
   .catch(err => {
     document.body.innerHTML = `<div style="color:#e05555;font-family:monospace;padding:40px">
@@ -504,6 +635,9 @@ function buildTrialHTML(filename, idx, total) {
 // ATTACH HANDLERS (runs after each trial loads)
 // ─────────────────────────────────────────────
 function attachTrialHandlers(filename, idx) {
+  // show the persistent download button once trials begin
+  document.getElementById('global-dl-btn').style.display = 'block';
+
   const state = { label: '', confidence: null, face: null };
 
   const labelInput  = document.getElementById('q-label');
@@ -554,6 +688,8 @@ function attachTrialHandlers(filename, idx) {
       confidence: state.confidence,
       face: state.face,
     });
+    saveToStorage();
+    maybePeriodicallyDownload(saved.length + idx + 1);
     jsPsych.finishTrial();
   });
 }

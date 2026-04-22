@@ -397,9 +397,11 @@ const OSF_PROJECT     = 'h2snj';
 // ─────────────────────────────────────────────
 let participantId = '';
 let allImages     = [];
+let totalImages   = 0;
 let results       = [];
 let currentIdx    = 0;
 let trialState    = { label: '', confidence: null, face: null };
+const SESSION_TS  = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19); // e.g. 2026-04-22T10-30-00
 
 // ─────────────────────────────────────────────
 // STORAGE
@@ -445,7 +447,7 @@ function downloadCSV(suffix) {
 async function uploadToOSF() {
   if (!OSF_TOKEN || OSF_TOKEN === 'PASTE_YOUR_NEW_TOKEN_HERE') return;
   try {
-    const filename = `sub-${participantId}.csv`;
+    const filename = `sub-${participantId}_${SESSION_TS}.csv`;
     const csv      = resultsToCSV();
     const headers  = { 'Authorization': `Bearer ${OSF_TOKEN}`, 'Content-Type': 'text/csv' };
 
@@ -500,7 +502,6 @@ let trialStartTime = 0;
 
 function showTrial(idx) {
   const image = allImages[idx];
-  const total = allImages.length;
   const overallNum = results.length + 1;
 
   // reset state
@@ -508,9 +509,9 @@ function showTrial(idx) {
   trialStartTime = Date.now();
 
   // update UI
-  document.getElementById('progress-bar').style.width = `${Math.round((idx / total) * 100)}%`;
+  document.getElementById('progress-bar').style.width = `${Math.round((overallNum - 1) / totalImages * 100)}%`;
   document.getElementById('trial-num').textContent = overallNum;
-  document.getElementById('trial-total').textContent = total;
+  document.getElementById('trial-total').textContent = totalImages;
   document.getElementById('trial-img').src = IMAGE_FOLDER + image;
   document.getElementById('q-label').value = '';
   document.getElementById('val-msg').textContent = '';
@@ -644,14 +645,14 @@ fetch(IMAGES_JSON)
       results       = saved.results;
       const completedSet = new Set(results.map(r => r.image));
 
-      // use same order for remaining images — filter already done ones
-      allImages  = shuffle(imageList).filter(f => !completedSet.has(f));
-      currentIdx = 0;
+      totalImages = imageList.length;
+      allImages   = shuffle(imageList).filter(f => !completedSet.has(f));
+      currentIdx  = 0;
 
       // show resume banner
       document.getElementById('resume-banner').style.display = 'block';
       document.getElementById('resume-banner').textContent =
-        `↩ Saved progress found — resuming from image ${results.length + 1} of ${imageList.length}`;
+        `↩ Saved progress found — resuming from image ${results.length + 1} of ${totalImages}`;
       document.getElementById('instructions-count').textContent =
         `${allImages.length} images remaining.`;
       document.getElementById('begin-btn').textContent = 'Resume';
@@ -660,9 +661,10 @@ fetch(IMAGES_JSON)
       showScreen('screen-instructions');
     } else {
       // fresh start
-      allImages = shuffle(imageList);
+      allImages   = shuffle(imageList);
+      totalImages = allImages.length;
       document.getElementById('instructions-count').textContent =
-        `There are ${allImages.length} images in total.`;
+        `There are ${totalImages} images in total.`;
       showScreen('screen-pid');
     }
   })

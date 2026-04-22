@@ -389,9 +389,8 @@ const IMAGES_JSON     = 'images.json';
 const AUTO_SAVE_EVERY = 50;
 const STORAGE_KEY     = 'image_recognition_data';
 
-const OSF_TOKEN       = 'DjgMSyaqKF4cjLxSYeXC9tVmDiWyYUbJPKW1HkmjGcRgNDrR8eiAPx8SzPTXZhfLmmpaDe';   // ← paste your OSF token
+const OSF_TOKEN       = 'nGlCZwnKypopHQPZSJUowHT1yj3GxJPdegayOCBueMqn1fzBIu5sdJoIEYtCW5opLfZhgx'; // ← paste your new OSF token
 const OSF_PROJECT     = 'h2snj';
-const OSF_FOLDER      = 'data';                    // subfolder within OSF Storage (created automatically)
 
 // ─────────────────────────────────────────────
 // STATE
@@ -444,21 +443,33 @@ function downloadCSV(suffix) {
 // OSF UPLOAD
 // ─────────────────────────────────────────────
 async function uploadToOSF() {
-  if (!OSF_TOKEN || OSF_TOKEN === 'PASTE_YOUR_TOKEN_HERE') return;
+  if (!OSF_TOKEN || OSF_TOKEN === 'PASTE_YOUR_NEW_TOKEN_HERE') return;
   try {
     const filename = `sub-${participantId}.csv`;
     const csv      = resultsToCSV();
-    const url      = `https://files.osf.io/v1/resources/${OSF_PROJECT}/providers/osfstorage/${OSF_FOLDER}/?name=${encodeURIComponent(filename)}&kind=file`;
-    await fetch(url, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${OSF_TOKEN}`,
-        'Content-Type': 'text/csv',
-      },
-      body: csv
-    });
+    const headers  = { 'Authorization': `Bearer ${OSF_TOKEN}`, 'Content-Type': 'text/csv' };
+
+    // check if file already exists in root storage
+    const listResp = await fetch(
+      `https://files.osf.io/v1/resources/${OSF_PROJECT}/providers/osfstorage/`,
+      { headers: { 'Authorization': `Bearer ${OSF_TOKEN}` } }
+    );
+    const listData = await listResp.json();
+    const existing = listData.data?.find(f => f.attributes?.name === filename);
+
+    let uploadUrl;
+    if (existing) {
+      // update existing file via its upload link
+      uploadUrl = existing.links.upload;
+    } else {
+      // create new file
+      uploadUrl = `https://files.osf.io/v1/resources/${OSF_PROJECT}/providers/osfstorage/?name=${encodeURIComponent(filename)}&kind=file`;
+    }
+
+    const resp = await fetch(uploadUrl, { method: 'PUT', headers, body: csv });
+    if (!resp.ok) console.warn('OSF upload failed:', resp.status, await resp.text());
   } catch(e) {
-    console.warn('OSF upload failed:', e);
+    console.warn('OSF upload error:', e);
   }
 }
 
